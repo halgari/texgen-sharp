@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/bench/">
+    <Project Path="bench/TexGen.Bench/TexGen.Bench.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/TexGen.Cli/TexGen.Cli.csproj" />
+    <Project Path="src/TexGen/TexGen.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/TexGen.Tests/TexGen.Tests.csproj" />
+  </Folder>
+</Solution>
