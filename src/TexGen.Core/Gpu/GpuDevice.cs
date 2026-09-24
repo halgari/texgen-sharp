@@ -66,8 +66,10 @@ public sealed class GpuDevice : IDisposable
              .EnableAlgorithms();
             if (backend is GpuBackend.Auto or GpuBackend.Cuda) b.Cuda();
             if (backend is GpuBackend.Auto or GpuBackend.OpenCL) b.OpenCL();
-            // Multiple processors so the CPU fallback is parallel.
-            b.CPU(CPUDevice.Default);
+            // 4-thread warps x 16 warps = 64-thread groups (the BC6H/BC7 group size); the
+            // default CPU device caps groups at 16 threads.
+            b.CPU(new CPUDevice(numThreadsPerWarp: 4, numWarpsPerMultiprocessor: 16,
+                numMultiprocessors: Math.Max(1, Environment.ProcessorCount / 4)));
         });
 
         try
