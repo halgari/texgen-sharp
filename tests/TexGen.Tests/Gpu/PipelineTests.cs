@@ -47,7 +47,7 @@ public class PipelineTests(GpuFixture gpu)
     public void FullMipChainToBc3ThenDdsRoundTrip()
     {
         var scratch = Converter.Convert(TestImages.Gradient(64, 48, alpha: false),
-            new ConvertOptions { Format = DxgiFormat.BC3_UNORM, MipLevels = 0 }, gpu.Device);
+            new ConvertOptions { Format = DxgiFormat.BC3_UNORM, MipLevels = 0, Codec = CodecPreference.Gpu }, gpu.Device);
         int expected = ScratchImage.CountMips(64, 48); // 7 levels
         Assert.Equal(expected, scratch.Metadata.MipLevels);
         Assert.Equal(64, scratch.Images[0].Width);
@@ -64,7 +64,7 @@ public class PipelineTests(GpuFixture gpu)
     public void ResizeAndCompressCombined()
     {
         var s = Converter.Convert(TestImages.Gradient(100, 100, alpha: false),
-            new ConvertOptions { Format = DxgiFormat.BC1_UNORM, Width = 64, Height = 64 }, gpu.Device);
+            new ConvertOptions { Format = DxgiFormat.BC1_UNORM, Width = 64, Height = 64, Codec = CodecPreference.Gpu }, gpu.Device);
         Assert.Equal(64, s.Images[0].Width);
         Assert.Equal(64, s.Images[0].Height);
         Assert.Equal(DxgiFormat.BC1_UNORM, s.Metadata.Format);
@@ -95,7 +95,7 @@ public class PipelineTests(GpuFixture gpu)
                 ldr.Pixels[o + 3] = 255;
             }
         var s = Converter.Convert(ldr,
-            new ConvertOptions { Format = DxgiFormat.BC6H_UF16, Width = 32, Height = 32, MipLevels = 0 }, gpu.Device);
+            new ConvertOptions { Format = DxgiFormat.BC6H_UF16, Width = 32, Height = 32, MipLevels = 0, Codec = CodecPreference.Gpu }, gpu.Device);
         Assert.Equal(DxgiFormat.BC6H_UF16, s.Metadata.Format);
         Assert.Equal(6, s.Metadata.MipLevels); // 32x32 -> 6 levels
         Assert.Equal(32, s.Images[0].Width);
@@ -117,7 +117,7 @@ public class PipelineTests(GpuFixture gpu)
         Assert.Equal(7, fp16.Metadata.MipLevels);
         Assert.Equal(4f, (float)BitConverter.ToHalf(fp16.BaseImage.Pixels, (63 * 4) * 2), 2);
 
-        var bc6 = Converter.Convert(hdr, new ConvertOptions { Format = DxgiFormat.BC6H_SF16, MipLevels = 3 }, gpu.Device);
+        var bc6 = Converter.Convert(hdr, new ConvertOptions { Format = DxgiFormat.BC6H_SF16, MipLevels = 3, Codec = CodecPreference.Gpu }, gpu.Device);
         Assert.Equal(3, bc6.Metadata.MipLevels);
         Assert.True(TestImages.PsnrHdr(hdr, TexGen.Decoders.Bc6hDecoder.Decode(bc6.BaseImage)) > 40);
     }
@@ -127,7 +127,7 @@ public class PipelineTests(GpuFixture gpu)
     {
         var formats = new[] { DxgiFormat.BC7_UNORM, DxgiFormat.BC1_UNORM, DxgiFormat.BC6H_UF16, DxgiFormat.BC3_UNORM };
         var src = TestImages.Gradient(16, 16); // small: also runs on the (slow) CPU accelerator
-        byte[] Run(DxgiFormat f) => Dds.Write(Converter.Convert(src, new ConvertOptions { Format = f, MipLevels = 0 }, gpu.Device));
+        byte[] Run(DxgiFormat f) => Dds.Write(Converter.Convert(src, new ConvertOptions { Format = f, MipLevels = 0, Codec = CodecPreference.Gpu }, gpu.Device));
         var expected = formats.Select(Run).ToArray();
         var actual = new byte[16][];
         Parallel.For(0, actual.Length, i => actual[i] = Run(formats[i % formats.Length]));
