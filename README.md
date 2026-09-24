@@ -50,14 +50,14 @@ File.WriteAllBytes("albedo.dds", Dds.Write(dds));
 - .NET 10 SDK
 - For GPU acceleration: an NVIDIA GPU with a current driver (CUDA; no CUDA
   toolkit needed, ILGPU emits PTX directly), or an OpenCL 2.0+ device.
-  Without one, everything runs on the ILGPU CPU accelerator (`-nogpu` forces it).
+  Without one, compression uses the DirectXTex CPU codec (`-nogpu` forces it).
 
 ## Formats
 
 | | |
 |---|---|
 | **Input** | PNG, JPEG, BMP, GIF, WebP, ICO, WBMP (SkiaSharp, color-managed to sRGB like the browser), Radiance `.hdr`, DDS (BC1–BC7, BC6H and the uncompressed formats below) |
-| **Output (GPU-compressed)** | BC1, BC2, BC3 (+ `_SRGB`), BC4_UNORM, BC5_UNORM, BC6H_UF16, BC6H_SF16, BC7 (+ `_SRGB`) |
+| **Output (block-compressed)** | BC1, BC2, BC3 (+ `_SRGB`), BC4_UNORM, BC5_UNORM, BC6H_UF16, BC6H_SF16, BC7 (+ `_SRGB`) on GPU or CPU; BC4_SNORM, BC5_SNORM on CPU |
 | **Output (uncompressed)** | R8G8B8A8 (+ `_SRGB`), B8G8R8A8 (+ `_SRGB`), B8G8R8X8, R16G16B16A16_UNORM/FLOAT, R32G32B32A32_FLOAT, R32_FLOAT, R16_UNORM, R8_UNORM, R8G8_UNORM |
 | **Containers** | DDS (DX10 header), plus PNG/JPEG/WebP via `-ft` |
 
@@ -75,16 +75,17 @@ File.WriteAllBytes("albedo.dds", Dds.Write(dds));
 | `-c <hex>` | colorkey: matching pixels → transparent black |
 | `-pmalpha` / `-alpha` | premultiply alpha (after mips, on the GPU; DDS tagged premultiplied) / undo premultiplied alpha |
 | `-aw <n>` | BC7 alpha weight |
-| `-bc q` / `-bc x` | BC7 quick (modes 4–6) / also try 3-subset modes 0/2 |
+| `-bc q` / `-bc x` | BC7 quick (GPU: modes 4–6, CPU: mode 6) / also try 3-subset modes 0/2 |
+| `-bc d` / `-bc u` / `-at <n>` | CPU codec: dither / uniform weighting / BC1 alpha threshold |
 | `-px` / `-sx` / `-l` / `-ft` | output name prefix / suffix / lowercase / file type (`dds`, `png`, `jpg`, `webp`) |
 | `-o <dir>` | output directory (default: current directory, like texconv) |
 | `-y` | overwrite existing outputs (otherwise an error, like texconv) |
 | `-r` | recursive wildcard search |
 | `-flist <file>` | read input paths from a text file (`#` comments allowed) |
-| `-gpu <n>` / `-nogpu` | select the GPU adapter / run kernels on the CPU |
+| `-gpu <n>` / `-nogpu` | select the GPU adapter / use the DirectXTex CPU codec |
 | `-nologo`, `-timing` | suppress banner / print processing time |
 
-Other texconv flags (`-nmap`, `-at`, `-wicq`, `-nits`, `-fl`, `-dx9`, …) are accepted, their
+Other texconv flags (`-nmap`, `-wicq`, `-nits`, `-fl`, `-dx9`, …) are accepted, their
 values consumed, and reported as ignored warnings. Both `-flag` and `/flag`, and the
 `-flag:value` form, are understood.
 
@@ -112,10 +113,33 @@ folder in one process, so that cost is paid once per run.
 Output quality, checked with Pillow's independent DDS decoder on real images: BC7
 ≈44–51 dB, BC1/BC3 ≈37 dB, BC4/BC5 ≈54 dB, BC6H ≈49 dB (PSNR).
 
-**CPU fallback (`-nogpu`, or no supported GPU):** every kernel also runs on ILGPU's CPU
-accelerator, which is what CI uses and produces identical blocks. It emulates GPU
-group barriers with OS threads, though, so it is only practical for BC1–5, uncompressed
-output, resize and mips. BC7/BC6H take seconds per 64×64 image there.
+### GPU vs CPU
+
+Without a GPU, or with `-nogpu`, compression uses a C# port of **DirectXTex's CPU codec**
+(`BC.cpp`, `BC4BC5.cpp`, `BC6HBC7.cpp` — texconv's own non-GPU encoders). The BC6H/BC7
+port was verified byte-identical to natively compiled DirectXTex over ~80k blocks.
+Blocks are encoded in parallel on all cores. Same image, RTX 5090 vs 32-core CPU,
+end-to-end:
+
+| Format | Size | GPU | CPU codec | GPU speedup |
+|---|---|---|---|---|
+| BC1 | 4096² | 5.2 ms | 58 ms | 11× |
+| BC3 | 4096² | 7.2 ms | 41 ms | 6× |
+| BC4 | 4096² | 6.6 ms | 27 ms | 4× |
+| BC5 | 4096² | 8.0 ms | 46 ms | 6× |
+| BC7 quick (`-bc q`) | 4096² | 8.8 ms | 5.8 s | 650× |
+| BC7 | 1024² | 4.0 ms | 11.2 s | 2,800× |
+| BC6H | 1024² | 6.3 ms | 4.7 s | 750× |
+
+Quality is comparable. The CPU BC1–3 encoders are ~1 dB better on noisy images and
+~0.6 dB behind on smooth gradients; BC6H/BC7 are within a few tenths of a dB. The CPU
+codec also adds BC4/BC5 **SNORM**, texconv's `-bc d` (dither) / `-bc u` (uniform
+weighting), and `-at` (BC1 alpha threshold). Select it explicitly with
+`ConvertOptions.Codec = CodecPreference.Cpu`.
+
+The GPU kernels themselves can also run on ILGPU's CPU accelerator, which CI uses to
+test them without a GPU. That mode emulates GPU barriers with OS threads, so it is
+only for testing.
 
 Run the benchmark yourself:
 
@@ -163,6 +187,7 @@ src/TexGen.Core/
   Converter.cs     high-level Convert(image, options) pipeline
   TexconvArgs.cs   texconv command-line parser
   Decoders/        CPU reference decoders: BC1–5, BC6H, BC7
+  Cpu/             DirectXTex CPU codec port (BC1–5, BC6H, BC7) + parallel block driver
   Gpu/             ILGPU device selection, device-resident textures, kernels:
                    ImageKernels (resize/mips/premultiply), BcnEncoder (BC1–5),
                    Bc7Encoder, Bc6hEncoder
