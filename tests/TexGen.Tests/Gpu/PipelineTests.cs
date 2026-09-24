@@ -79,4 +79,46 @@ public class PipelineTests(GpuFixture gpu)
         var expected = Transforms.PremultiplyAlpha(src).Pixels[..4];
         foreach (var level in s.Images) Assert.Equal(expected, level.Pixels[..4]);
     }
+
+    [Fact]
+    public void LdrSourceResizeAndMipsToBc6h()
+    {
+        // 8-bit source goes through sRGB->linear float expansion, float resize, float mips.
+        var ldr = Image.Create(DxgiFormat.R8G8B8A8_UNORM, 64, 64);
+        for (int y = 0; y < 64; y++)
+            for (int x = 0; x < 64; x++)
+            {
+                int o = y * ldr.RowPitch + x * 4;
+                ldr.Pixels[o] = (byte)(x * 4);
+                ldr.Pixels[o + 1] = (byte)(y * 4);
+                ldr.Pixels[o + 2] = 128;
+                ldr.Pixels[o + 3] = 255;
+            }
+        var s = Converter.Convert(ldr,
+            new ConvertOptions { Format = DxgiFormat.BC6H_UF16, Width = 32, Height = 32, MipLevels = 0 }, gpu.Device);
+        Assert.Equal(DxgiFormat.BC6H_UF16, s.Metadata.Format);
+        Assert.Equal(6, s.Metadata.MipLevels); // 32x32 -> 6 levels
+        Assert.Equal(32, s.Images[0].Width);
+        Assert.Equal(1, s.Images[^1].Width);
+
+        // Compare against the same resize done in float on the GPU, decoded.
+        var dec = TexGen.Decoders.Bc6hDecoder.Decode(s.BaseImage);
+        using var tex = GpuTexture.Upload(gpu.Device, Hdr.Rgba8ToLinearFloat(ldr));
+        using var small = gpu.Device.ImageOps.Resize(tex, 32, 32, false);
+        double q = TestImages.PsnrHdr(small.Download(), dec);
+        Assert.True(q > 35, $"{q:F2} dB"); // small-image bound from the texconv-js BC6H suite
+    }
+
+    [Fact]
+    public void HdrFloatSourceToFp16AndBc6hMips()
+    {
+        var hdr = TestImages.HdrGradient(64, 32);
+        var fp16 = Converter.Convert(hdr, new ConvertOptions { Format = DxgiFormat.R16G16B16A16_FLOAT, MipLevels = 0 }, gpu.Device);
+        Assert.Equal(7, fp16.Metadata.MipLevels);
+        Assert.Equal(4f, (float)BitConverter.ToHalf(fp16.BaseImage.Pixels, (63 * 4) * 2), 2);
+
+        var bc6 = Converter.Convert(hdr, new ConvertOptions { Format = DxgiFormat.BC6H_SF16, MipLevels = 3 }, gpu.Device);
+        Assert.Equal(3, bc6.Metadata.MipLevels);
+        Assert.True(TestImages.PsnrHdr(hdr, TexGen.Decoders.Bc6hDecoder.Decode(bc6.BaseImage)) > 40);
+    }
 }
