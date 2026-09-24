@@ -42,9 +42,21 @@ public class TexconvArgsTests
     [Fact]
     public void CollectsWarningsForUnsupportedFlags()
     {
-        var w = Parse("-f DXT5 -r -bc d -zzz").Warnings;
-        Assert.Contains(w, x => x.Contains("'d'"));
+        var w = Parse("-f DXT5 -r -bc z -zzz").Warnings;
+        Assert.Contains(w, x => x.Contains("'z'"));
         Assert.Contains(w, x => x.Contains("Unrecognized", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void CpuCodecFlags()
+    {
+        var cmd = Parse("-f BC1_UNORM -bc du -at 0.25 -nogpu");
+        Assert.True(cmd.Options.Dither);
+        Assert.True(cmd.Options.UniformWeighting);
+        Assert.Equal(0.25f, cmd.Options.AlphaThreshold);
+        Assert.Equal(CodecPreference.Cpu, cmd.Options.Codec);
+        Assert.Equal(TexGen.Cpu.BcFlags.DitherRgb | TexGen.Cpu.BcFlags.DitherA | TexGen.Cpu.BcFlags.Uniform, cmd.Options.CpuFlags);
+        Assert.Empty(cmd.Warnings);
     }
 
     [Fact]

@@ -10,9 +10,21 @@
 // blocks come back to the host.
 //-------------------------------------------------------------------------------------
 
+using TexGen.Cpu;
 using TexGen.Gpu;
 
 namespace TexGen;
+
+/// <summary>Which block-compression codec to use.</summary>
+public enum CodecPreference
+{
+    /// <summary>GPU encoders on hardware GPUs; the DirectXTex CPU codec otherwise.</summary>
+    Auto,
+    /// <summary>Always the GPU (ILGPU) encoders, even on the CPU accelerator.</summary>
+    Gpu,
+    /// <summary>Always the DirectXTex CPU codec (texconv's non-GPU encoders).</summary>
+    Cpu,
+}
 
 public sealed record ConvertOptions
 {
@@ -45,6 +57,21 @@ public sealed record ConvertOptions
     public bool PremultiplyAlpha { get; init; }
     /// <summary>Undo premultiplied alpha on the source (texconv -alpha).</summary>
     public bool StraightAlpha { get; init; }
+    /// <summary>Block-compression codec choice; <c>-nogpu</c> implies the CPU codec.</summary>
+    public CodecPreference Codec { get; init; } = CodecPreference.Auto;
+    /// <summary>CPU codec, BC1: alpha below this becomes transparent (texconv -at). Default 0.5.</summary>
+    public float? AlphaThreshold { get; init; }
+    /// <summary>CPU codec, BC1-3: dither RGB and alpha (texconv -bc d).</summary>
+    public bool Dither { get; init; }
+    /// <summary>CPU codec, BC1-3: uniform instead of perceptual channel weighting (texconv -bc u).</summary>
+    public bool UniformWeighting { get; init; }
+
+    /// <summary>The DirectXTex BC_FLAGS these options select (CPU codec).</summary>
+    public BcFlags CpuFlags =>
+        (Dither ? BcFlags.DitherRgb | BcFlags.DitherA : 0)
+        | (UniformWeighting ? BcFlags.Uniform : 0)
+        | (Bc7Use3Subsets ? BcFlags.Use3Subsets : 0)
+        | (Bc7Quick ? BcFlags.ForceBc7Mode6 : 0);
 }
 
 public static class Converter
@@ -68,9 +95,8 @@ public static class Converter
             throw new ArgumentException($"Convert: source must be R8G8B8A8(_SRGB) or R32G32B32A32_FLOAT; got {source.Format}");
         if (!Dxgi.IsCompressed(format) && !PixelConvert.CanEncode(format))
             throw new NotSupportedException($"Convert: output format {format} is not supported");
-        if (Dxgi.IsCompressed(format) && !IsBc6h(format) && !BcnEncoder.Supports(format)
-            && format is not (DxgiFormat.BC7_UNORM or DxgiFormat.BC7_UNORM_SRGB))
-            throw new NotSupportedException($"Convert: GPU compression to {format} is not supported");
+        if (Dxgi.IsCompressed(format) && !CpuCompressor.Supports(format))
+            throw new NotSupportedException($"Convert: compression to {format} is not supported");
         if (floatSource && !IsFloatTarget(format))
             throw new ArgumentException($"Convert: HDR float source supports only BC6H and float targets; got {format}");
 
@@ -106,20 +132,40 @@ public static class Converter
         int mipCount = mipRequest <= 0 ? fullChain : Math.Min(mipRequest, fullChain);
         bool srgbFilter = options.SrgbFilter ?? Dxgi.IsSrgb(src.Format);
 
-        bool needGpu = wantResize || mipCount > 1 || Dxgi.IsCompressed(format);
+        bool compressed = Dxgi.IsCompressed(format);
+        bool cpuCodec = compressed && UseCpuCodec(options, () => device ??= GpuDevice.Shared);
+        bool needGpu = wantResize || mipCount > 1 || (compressed && !cpuCodec);
         if (!needGpu)
         {
-            // Pure CPU path: at most a premultiply + pixel format conversion.
+            // Pure CPU path: at most a premultiply + pixel format conversion or CPU compression.
             if (options.PremultiplyAlpha) src = Transforms.PremultiplyAlpha(src);
-            return ScratchImage.From2D(PixelConvert.Encode(src, format));
+            return ScratchImage.From2D(EncodeOnCpu(src, options));
         }
 
         device ??= GpuDevice.Shared;
-        lock (device.Sync) return ConvertOnGpu(device, src, options, dstW, dstH, mipCount, srgbFilter);
+        lock (device.Sync) return ConvertOnGpu(device, src, options, dstW, dstH, mipCount, srgbFilter, cpuCodec);
     }
 
+    /// <summary>
+    /// CPU codec when asked for, for formats only it implements (BC4/BC5 SNORM), or — in
+    /// Auto mode — when the device is not real GPU hardware (texconv -nogpu).
+    /// </summary>
+    private static bool UseCpuCodec(ConvertOptions options, Func<GpuDevice> device) => options.Codec switch
+    {
+        CodecPreference.Cpu => true,
+        _ when options.Format is DxgiFormat.BC4_SNORM or DxgiFormat.BC5_SNORM => true,
+        CodecPreference.Gpu => false,
+        _ => !device().IsHardware,
+    };
+
+    /// <summary>Uncompressed pixel conversion or DirectXTex CPU block compression of one level.</summary>
+    private static Image EncodeOnCpu(Image level, ConvertOptions options) => Dxgi.IsCompressed(options.Format)
+        ? CpuCompressor.Compress(level, options.Format, options.CpuFlags,
+            options.AlphaThreshold ?? CpuCompressor.DefaultAlphaThreshold)
+        : PixelConvert.Encode(level, options.Format);
+
     private static ScratchImage ConvertOnGpu(GpuDevice device, Image src, ConvertOptions options,
-        int dstW, int dstH, int mipCount, bool srgbFilter)
+        int dstW, int dstH, int mipCount, bool srgbFilter, bool cpuCodec)
     {
         var format = options.Format;
         var textures = new List<GpuTexture>(mipCount + 1);
@@ -154,9 +200,9 @@ public static class Converter
             }
 
             // 4. Encode every level (all launches are queued before any download).
-            if (!Dxgi.IsCompressed(format))
+            if (!Dxgi.IsCompressed(format) || cpuCodec)
             {
-                var outImages = levels.Select(l => PixelConvert.Encode(l.Download(), format)).ToList();
+                var outImages = levels.Select(l => EncodeOnCpu(l.Download(), options)).ToList();
                 return outImages.Count == 1 ? ScratchImage.From2D(outImages[0]) : ScratchImage.FromMipChain(outImages);
             }
 

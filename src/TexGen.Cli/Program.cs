@@ -41,11 +41,12 @@ internal static class Cli
            -alpha              convert premultiplied alpha to straight alpha
            -swizzle <rgba>     swizzle image channels using HLSL-style mask
            -aw <weight>        BC7 GPU compressor weighting for alpha error metric
-           -bc <q|x>           BC7: q = quick (modes 4-6), x = also try 3-subset modes
+           -bc <q|x|d|u>       BC7 q = quick, x = 3-subset modes; CPU BC1-3 d = dither, u = uniform
+           -at <threshold>     BC1 alpha threshold (CPU codec, default 0.5)
            -nologo             suppress copyright message
            -timing             display elapsed processing time
            -gpu <adapter>      select GPU adapter index
-           -nogpu              run the GPU kernels on the CPU instead
+           -nogpu              do not use the GPU (DirectXTex CPU codec)
 
         Input formats: png jpg bmp gif webp ico wbmp hdr dds
         """;
@@ -166,7 +167,7 @@ internal static class Cli
     }
 
     private static bool NeedsGpu(Image image, ConvertOptions o) =>
-        Dxgi.IsCompressed(o.Format) || o.MipLevels is not 1 and not null
+        (Dxgi.IsCompressed(o.Format) && o.Codec != CodecPreference.Cpu) || o.MipLevels is not 1 and not null
         || (o.Width is > 0 && o.Width != image.Width) || (o.Height is > 0 && o.Height != image.Height);
 
     /// <summary>Resolve positional arguments (with wildcards / -r) and -flist into input paths.</summary>

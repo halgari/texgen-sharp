@@ -59,7 +59,7 @@ public static class TexconvArgs
     // Value-consuming texconv flags accepted (so their argument isn't mistaken for an
     // input file) but with no effect in texgen.
     private static readonly HashSet<string> IgnoredValueFlags =
-        ["fl", "wicq", "at", "nmapamp", "nits", "d", "rotatecolor", "nmap", "keepcoverage"];
+        ["fl", "wicq", "nmapamp", "nits", "d", "rotatecolor", "nmap", "keepcoverage"];
 
     // Boolean texconv flags that change nothing in texgen.
     private static readonly HashSet<string> IgnoredBoolFlags =
@@ -129,6 +129,9 @@ public static class TexconvArgs
                 case "w": if (Num(value, "-w width") is { } w) o = o with { Width = (int)w }; break;
                 case "h": if (Num(value, "-h height") is { } h) o = o with { Height = (int)h }; break;
                 case "m": if (Num(value, "-m mip levels") is { } m) o = o with { MipLevels = (int)m }; break;
+                case "at":
+                    if (Num(value, "-at alpha threshold") is { } at) o = o with { AlphaThreshold = (float)at };
+                    break;
                 case "aw": if (Num(value, "-aw alpha weight") is { } aw) o = o with { AlphaWeight = (float)aw }; break;
                 // -srgbi: treat INPUT as sRGB (filtering); -srgbo: tag OUTPUT format as
                 // sRGB; -srgb: both — mirroring upstream texconv.
@@ -166,6 +169,8 @@ public static class TexconvArgs
                         {
                             case 'q': o = o with { Bc7Quick = true }; break;
                             case 'x': o = o with { Bc7Use3Subsets = true }; break;
+                            case 'd': o = o with { Dither = true }; break;
+                            case 'u': o = o with { UniformWeighting = true }; break;
                             default: warnings.Add($"-bc '{ch}' not supported (ignored)"); break;
                         }
                     }
@@ -183,7 +188,10 @@ public static class TexconvArgs
                 case "flist": fileList = value; break;
                 case "nologo": noLogo = true; break;
                 case "timing": timing = true; break;
-                case "nogpu": noGpu = true; break;
+                case "nogpu":
+                    noGpu = true;
+                    o = o with { Codec = CodecPreference.Cpu };
+                    break;
                 case "gpu":
                     if (Num(value, "-gpu adapter") is { } g) gpuAdapter = (int)g;
                     break;
