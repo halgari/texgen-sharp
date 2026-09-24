@@ -121,4 +121,16 @@ public class PipelineTests(GpuFixture gpu)
         Assert.Equal(3, bc6.Metadata.MipLevels);
         Assert.True(TestImages.PsnrHdr(hdr, TexGen.Decoders.Bc6hDecoder.Decode(bc6.BaseImage)) > 40);
     }
+
+    [Fact]
+    public void ConcurrentConversionsOnOneDeviceMatchSequentialResults()
+    {
+        var formats = new[] { DxgiFormat.BC7_UNORM, DxgiFormat.BC1_UNORM, DxgiFormat.BC6H_UF16, DxgiFormat.BC3_UNORM };
+        var src = TestImages.Gradient(16, 16); // small: also runs on the (slow) CPU accelerator
+        byte[] Run(DxgiFormat f) => Dds.Write(Converter.Convert(src, new ConvertOptions { Format = f, MipLevels = 0 }, gpu.Device));
+        var expected = formats.Select(Run).ToArray();
+        var actual = new byte[16][];
+        Parallel.For(0, actual.Length, i => actual[i] = Run(formats[i % formats.Length]));
+        for (int i = 0; i < actual.Length; i++) Assert.Equal(expected[i % formats.Length], actual[i]);
+    }
 }

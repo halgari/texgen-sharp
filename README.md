@@ -90,11 +90,52 @@ values consumed, and reported as ignored warnings. Both `-flag` and `/flag`, and
 
 ## Performance
 
-See [Benchmarks](#benchmarks) below; run your own with:
+End-to-end `Converter.Convert` time (upload → encode → download, excluding file I/O) on an
+**NVIDIA RTX 5090** (CUDA), for a noisy photo-like test image, median of 5 runs
+(`bench/TexGen.Bench`):
+
+| Format | 1024² | 4096² | 8192² | 4096² + full mip chain |
+|---|---|---|---|---|
+| BC1 | 0.5 ms | 5.1 ms | 17.6 ms (3.8 GPix/s) | 6.9 ms |
+| BC3 | 0.7 ms | 7.4 ms | 26.9 ms | 11.1 ms |
+| BC4 | 0.6 ms | 6.6 ms | 22.0 ms | 9.9 ms |
+| BC5 | 0.8 ms | 8.0 ms | 30.4 ms | 12.9 ms |
+| BC7 | 3.8 ms | 58.7 ms | 236 ms (284 MPix/s) | 81.9 ms |
+| BC7 `-bc q` | | 8.5 ms | | |
+| BC7 `-bc x` | | 87.7 ms | | |
+| BC6H (UF16) | 6.3 ms | 78.4 ms | 298 ms | 99.5 ms |
+
+The first conversion of each encoder family pays a one-time ILGPU kernel compile
+(≈0.3 s for BC1–5, ≈0.5 s each for BC7 and BC6H). The texgen CLI converts a whole
+folder in one process, so that cost is paid once per run.
+
+Output quality, checked with Pillow's independent DDS decoder on real images: BC7
+≈44–51 dB, BC1/BC3 ≈37 dB, BC4/BC5 ≈54 dB, BC6H ≈49 dB (PSNR).
+
+**CPU fallback (`-nogpu`, or no supported GPU):** every kernel also runs on ILGPU's CPU
+accelerator, which is what CI uses and produces identical blocks. It emulates GPU
+group barriers with OS threads, though, so it is only practical for BC1–5, uncompressed
+output, resize and mips. BC7/BC6H take seconds per 64×64 image there.
+
+Run the benchmark yourself:
 
 ```bash
 dotnet run -c Release --project bench/TexGen.Bench -- --sizes 1024,4096 --mips
+dotnet run -c Release --project bench/TexGen.Bench -- --formats BC7_UNORM --quick
 ```
+
+## Differences from texconv-js
+
+- A real `texgen` executable, so the file-system flags texconv-js could only warn about
+  (`-o`, `-y`, `-r`, `-flist`, `-gpu`, `-nogpu`, `-timing`) work.
+- Extra inputs and outputs: DDS input, uncompressed FP16/FP32/R8/RG8/R16 outputs, and
+  PNG/JPEG/WebP via `-ft`. The browser demo UI is not ported.
+- GPU work stays on the device across resize, mips and encode, instead of one
+  upload/readback per stage.
+- The BC6H/BC7 kernels read texels byte-exactly with edge clamping. EncodeBlock gains
+  one barrier that the HLSL omitted (it relied on warp lockstep).
+- Image decoding uses SkiaSharp rather than the browser, so AVIF/HEIC input depends on
+  the platform's Skia build. The OpenCL path is untested; development used CUDA.
 
 ## Develop
 

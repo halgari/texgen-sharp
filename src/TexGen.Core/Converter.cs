@@ -115,7 +115,7 @@ public static class Converter
         }
 
         device ??= GpuDevice.Shared;
-        return ConvertOnGpu(device, src, options, dstW, dstH, mipCount, srgbFilter);
+        lock (device.Sync) return ConvertOnGpu(device, src, options, dstW, dstH, mipCount, srgbFilter);
     }
 
     private static ScratchImage ConvertOnGpu(GpuDevice device, Image src, ConvertOptions options,

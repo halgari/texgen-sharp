@@ -46,6 +46,12 @@ public sealed class GpuDevice : IDisposable
 
     public string Name => Accelerator.Name;
 
+    /// <summary>
+    /// Serializes pipeline work on this device: the cached encoders reuse scratch
+    /// buffers, so concurrent conversions on one device must not interleave.
+    /// </summary>
+    internal Lock Sync { get; } = new();
+
     public string Description => $"{Accelerator.AcceleratorType} {Accelerator.Name}";
 
     internal BcnEncoder Bcn => _bcn ??= new BcnEncoder(Accelerator);
