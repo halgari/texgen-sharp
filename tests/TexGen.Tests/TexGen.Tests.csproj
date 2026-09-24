@@ -19,7 +19,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\TexGen\TexGen.csproj" />
+    <ProjectReference Include="..\..\src\TexGen.Core\TexGen.Core.csproj" />
   </ItemGroup>
 
 </Project>

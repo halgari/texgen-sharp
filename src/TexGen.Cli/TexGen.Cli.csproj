@@ -1,13 +1,12 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
   <ItemGroup>
-    <ProjectReference Include="..\TexGen\TexGen.csproj" />
+    <ProjectReference Include="..\TexGen.Core\TexGen.Core.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <AssemblyName>texgen</AssemblyName>
-    <PackageId>TexGen.Cli</PackageId>
     <RootNamespace>TexGen.Cli</RootNamespace>
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>

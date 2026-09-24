@@ -119,16 +119,19 @@ internal static class Cli
     private static bool ConvertFile(string input, ParsedCommand cmd, ref GpuDevice? device)
     {
         var sw = Stopwatch.StartNew();
-        Console.Write($"reading {input}");
+        bool lineOpen = false;
         try
         {
             var image = ImageIO.Load(input);
-            Console.Write($" ({image.Width}x{image.Height} {image.Format})");
-
             var options = cmd.Options;
-            var scratch = Converter.Convert(image, options, NeedsGpu(image, options) ? GetDevice(cmd, ref device) : null);
+            var gpu = NeedsGpu(image, options) ? GetDevice(cmd, ref device) : null;
+            Console.Write($"reading {input} ({image.Width}x{image.Height} {image.Format})");
+            lineOpen = true;
+
+            var scratch = Converter.Convert(image, options, gpu);
             var meta = scratch.Metadata;
             Console.WriteLine($" as ({meta.Width}x{meta.Height},{meta.MipLevels} {meta.Format})");
+            lineOpen = false;
 
             var name = TexconvArgs.OutputFilename(input, cmd.Output);
             var outPath = cmd.Output.OutputDir is { } dir ? Path.Combine(dir, name) : name;
@@ -156,7 +159,7 @@ internal static class Cli
         }
         catch (Exception e)
         {
-            Console.WriteLine();
+            if (lineOpen) Console.WriteLine();
             Console.Error.WriteLine($"ERROR: {input}: {e.Message}");
             return false;
         }

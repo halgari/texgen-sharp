@@ -4,7 +4,7 @@
   </Folder>
   <Folder Name="/src/">
     <Project Path="src/TexGen.Cli/TexGen.Cli.csproj" />
-    <Project Path="src/TexGen/TexGen.csproj" />
+    <Project Path="src/TexGen.Core/TexGen.Core.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/TexGen.Tests/TexGen.Tests.csproj" />
