@@ -7,3 +7,4 @@ TestResults/
 /out/
 *.dds
 !tests/**/data/*.dds
+.claude/
