@@ -1,5 +1,7 @@
 # texgen-sharp
 
+[![CI](https://github.com/halgari/texgen-sharp/actions/workflows/ci.yml/badge.svg)](https://github.com/halgari/texgen-sharp/actions/workflows/ci.yml)
+
 A C# / **.NET 10** port of [texconv-js](https://github.com/halgari/texconv-js), itself a
 port of Microsoft [DirectXTex](https://github.com/microsoft/DirectXTex)'s `texconv`
 texture converter. Resize, mip generation and all block compression (BC1–BC7,
