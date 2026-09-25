@@ -12,9 +12,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        os: [ubuntu-latest, windows-latest, macos-latest]
     # Hosted runners have no GPU: the same kernels run on ILGPU's CPU accelerator,
-    # and compression uses the DirectXTex CPU codec at the runner's native SIMD level.
+    # and compression uses the DirectXTex CPU codec at the runner's native SIMD level
+    # (AVX2/AVX-512 on x64, NEON on the Apple Silicon macOS runner).
     runs-on: ${{ matrix.os }}
     env:
       TEXGEN_BACKEND: cpu
