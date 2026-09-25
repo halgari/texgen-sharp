@@ -127,9 +127,21 @@ end-to-end:
 | BC3 | 4096² | 7.2 ms | 41 ms | 6× |
 | BC4 | 4096² | 6.6 ms | 27 ms | 4× |
 | BC5 | 4096² | 8.0 ms | 46 ms | 6× |
-| BC7 quick (`-bc q`) | 4096² | 8.8 ms | 5.8 s | 650× |
-| BC7 | 1024² | 4.0 ms | 11.2 s | 2,800× |
-| BC6H | 1024² | 6.3 ms | 4.7 s | 750× |
+| BC7 quick (`-bc q`) | 4096² | 8.8 ms | 2.2 s | 250× |
+| BC7 | 1024² | 4.0 ms | 4.6 s | 1,150× |
+| BC6H | 1024² | 6.3 ms | 2.2 s | 340× |
+
+The BC6H/BC7 CPU encoders score candidate endpoints with SIMD, on all 16 pixels of a
+block at once, which makes them 2–2.5× faster than DirectXTex's scalar loops. The
+output stays byte-identical, since each lane reproduces the scalar search exactly. The
+width is chosen at startup: AVX-512, then AVX2 (256-bit), then SSE/NEON (128-bit), then
+scalar. Every level is tested against scalar and against native DirectXTex output
+(`TEXGEN_SIMD=scalar|vector` forces a lower level).
+
+| CPU codec, 1024² | scalar | 128-bit | 256-bit | AVX-512 |
+|---|---|---|---|---|
+| BC7 | 10.5 s | 5.8 s | 4.9 s | 4.6 s |
+| BC6H | 4.4 s | 2.8 s | 2.5 s | 2.2 s |
 
 Quality is comparable. The CPU BC1–3 encoders are ~1 dB better on noisy images and
 ~0.6 dB behind on smooth gradients; BC6H/BC7 are within a few tenths of a dB. The CPU

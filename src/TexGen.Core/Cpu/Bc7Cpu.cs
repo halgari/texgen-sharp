@@ -700,21 +700,10 @@ internal static class Bc7Cpu
         ref readonly var info = ref Info[ep.Mode];
         int indexPrec = indexMode != 0 ? info.IndexPrec2 : info.IndexPrec;
         int indexPrec2 = indexMode != 0 ? info.IndexPrec : info.IndexPrec2;
-        Buffer16<LdrColorA> palette;
-        Unsafe.SkipInit(out palette);
-        float totalErr = 0;
-
-        GeneratePaletteQuantized(ref ep, indexMode, endPts, palette);
-        for (int i = 0; i < np; ++i)
-        {
-            totalErr += Bc67Math.ComputeError(colors[i], palette, indexPrec, indexPrec2, out _, out _);
-            if (totalErr > minErr) // check for early exit
-            {
-                totalErr = float.MaxValue;
-                break;
-            }
-        }
-        return totalErr;
+        // GeneratePaletteQuantized + per-pixel ComputeError, fused and vectorized.
+        var a = Unquantize(endPts.A, info.RgbaPrecWithP);
+        var b = Unquantize(endPts.B, info.RgbaPrecWithP);
+        return Bc67Simd.LdrMapColors(colors, np, a, b, indexPrec, indexPrec2, minErr, Bc67Simd.Level);
     }
 
     private static float RoughMse(ref EncodeParams ep, int shape, int indexMode)

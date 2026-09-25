@@ -41,6 +41,7 @@ for (int i = 0; i < args.Length; i++)
 
 using var device = GpuDevice.Create(cpu ? GpuBackend.Cpu : GpuBackend.Auto);
 Console.WriteLine($"Device: {device.Description}");
+Console.WriteLine($"CPU codec SIMD: {TexGen.Cpu.Bc67Simd.Level} (hardware: {TexGen.Cpu.Bc67Simd.Hardware}, Vector<T> = {System.Numerics.Vector<int>.Count * 32} bits)");
 Console.WriteLine($"Mips: {(mips ? "full chain" : "base only")}, iterations: {iters}{(quick ? ", BC7 quick" : "")}{(threeSubsets ? ", BC7 3-subsets" : "")}");
 Console.WriteLine();
 Console.WriteLine($"{"format",-12} {"size",-11} {"cold ms",9} {"warm ms",9} {"MPix/s",9}");

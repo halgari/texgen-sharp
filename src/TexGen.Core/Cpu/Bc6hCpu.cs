@@ -310,20 +310,7 @@ internal static class Bc6hCpu
         Buffer16<IntColor> palette;
         Unsafe.SkipInit(out palette);
         GeneratePaletteQuantized(ref ep, endPts, palette);
-
-        float totErr = 0;
-        for (int i = 0; i < np; ++i)
-        {
-            float bestErr = Norm(colors[i], palette[0]);
-            for (int j = 1; j < numIndices && bestErr > 0; ++j)
-            {
-                float err = Norm(colors[i], palette[j]);
-                if (err > bestErr) break; // error increased, so we're done searching
-                if (err < bestErr) bestErr = err;
-            }
-            totErr += bestErr;
-        }
-        return totErr;
+        return Bc67Simd.HdrErrorSum(colors, np, palette, numIndices, Bc67Simd.Level);
     }
 
     private static float PerturbOne(ref EncodeParams ep, ReadOnlySpan<IntColor> colors, int np, int ch,
