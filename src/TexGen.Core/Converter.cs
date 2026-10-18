@@ -76,6 +76,14 @@ public sealed record ConvertOptions
 
 public static class Converter
 {
+    /// <summary>
+    /// Whether converting <paramref name="source"/> with <paramref name="options"/> does any GPU work: GPU block
+    /// compression, mips, or a resize. Anything else runs on the CPU without opening a device.
+    /// </summary>
+    public static bool NeedsGpu(Image source, ConvertOptions options) =>
+        (Dxgi.IsCompressed(options.Format) && options.Codec != CodecPreference.Cpu) || options.MipLevels is not 1 and not null
+        || (options.Width is > 0 && options.Width != source.Width) || (options.Height is > 0 && options.Height != source.Height);
+
     private static bool IsBc6h(DxgiFormat f) => f is DxgiFormat.BC6H_UF16 or DxgiFormat.BC6H_SF16;
 
     /// <summary>True for targets that are encoded from linear float data.</summary>

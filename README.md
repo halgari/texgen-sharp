@@ -155,6 +155,20 @@ The GPU kernels themselves can also run on ILGPU's CPU accelerator, which CI use
 test them without a GPU. That mode emulates GPU barriers with OS threads, so it is
 only for testing.
 
+### When the GPU fails
+
+A driver can throw, a device can refuse to open, and a kernel can hang and never return.
+`FallbackConverter` (what the `texgen` CLI uses) converts on the GPU while it works, and
+the first time it fails or holds the GPU past `GpuTimeout` (two minutes by default), it
+converts that image on the CPU and every image after it, logging why once. A failure only
+counts against the GPU if the CPU then converts the same image; an image neither can
+convert is thrown as before. Images that need no GPU work never open a device.
+
+```csharp
+using var converter = new FallbackConverter(log: Console.Error.WriteLine);
+var dds = converter.Convert(ImageIO.Load("albedo.png"), new ConvertOptions { Format = DxgiFormat.BC7_UNORM, MipLevels = 0 });
+```
+
 Run the benchmark yourself:
 
 ```bash
