@@ -90,34 +90,28 @@ internal static class Cli
             return 1;
         }
 
-        GpuDevice? device = null;
+        // The GPU while it works; the CPU for every file after the first one it fails or hangs on.
+        using var converter = new FallbackConverter(cmd.NoGpu ? GpuBackend.Cpu : GpuBackend.Auto, cmd.GpuAdapter,
+            log: message => Console.Error.WriteLine($"WARNING: {message}"));
+        if (cmd.NoGpu && !cmd.NoLogo) Console.WriteLine("Using CPU (-nogpu)");
+        var announced = cmd.NoGpu;
         int failures = 0;
         var total = Stopwatch.StartNew();
-        try
+        foreach (var input in inputs)
         {
-            foreach (var input in inputs)
+            if (!ConvertFile(input, cmd, converter)) failures++;
+            if (!announced && converter.UsingGpu && converter.GpuDescription is { } gpu)
             {
-                if (!ConvertFile(input, cmd, ref device)) failures++;
+                if (!cmd.NoLogo) Console.WriteLine($"Using GPU accelerator: {gpu}");
+                announced = true;
             }
-        }
-        finally
-        {
-            device?.Dispose();
         }
 
         if (cmd.Timing) Console.WriteLine($"Processing time: {total.Elapsed.TotalSeconds:F3} seconds");
         return failures == 0 ? 0 : 1;
     }
 
-    private static GpuDevice GetDevice(ParsedCommand cmd, ref GpuDevice? device)
-    {
-        if (device is not null) return device;
-        device = GpuDevice.Create(cmd.NoGpu ? GpuBackend.Cpu : GpuBackend.Auto, cmd.GpuAdapter);
-        if (!cmd.NoLogo) Console.WriteLine($"Using {(device.IsHardware ? "GPU" : "CPU")} accelerator: {device.Description}");
-        return device;
-    }
-
-    private static bool ConvertFile(string input, ParsedCommand cmd, ref GpuDevice? device)
+    private static bool ConvertFile(string input, ParsedCommand cmd, FallbackConverter converter)
     {
         var sw = Stopwatch.StartNew();
         bool lineOpen = false;
@@ -125,11 +119,10 @@ internal static class Cli
         {
             var image = ImageIO.Load(input);
             var options = cmd.Options;
-            var gpu = NeedsGpu(image, options) ? GetDevice(cmd, ref device) : null;
             Console.Write($"reading {input} ({image.Width}x{image.Height} {image.Format})");
             lineOpen = true;
 
-            var scratch = Converter.Convert(image, options, gpu);
+            var scratch = converter.Convert(image, options);
             var meta = scratch.Metadata;
             Console.WriteLine($" as ({meta.Width}x{meta.Height},{meta.MipLevels} {meta.Format})");
             lineOpen = false;
@@ -165,10 +158,6 @@ internal static class Cli
             return false;
         }
     }
-
-    private static bool NeedsGpu(Image image, ConvertOptions o) =>
-        (Dxgi.IsCompressed(o.Format) && o.Codec != CodecPreference.Cpu) || o.MipLevels is not 1 and not null
-        || (o.Width is > 0 && o.Width != image.Width) || (o.Height is > 0 && o.Height != image.Height);
 
     /// <summary>Resolve positional arguments (with wildcards / -r) and -flist into input paths.</summary>
     internal static List<string> ExpandInputs(ParsedCommand cmd)
